@@ -8,6 +8,7 @@ import io.circe._
 import io.circe.parser._
 import traffic.model.Model._
 import traffic.service.FileService.readFile
+import traffic.service.dijkstra.Dijkstra
 
 
 
@@ -67,25 +68,37 @@ object Main extends IOApp {
         .view
         .mapValues(transitTimes => transitTimes.sumAll / transitTimes.length)
         .toMap
-    measurementsMap.map(Measurement.apply _.tupled).toList
+    measurementsMap.map((Measurement.apply _).tupled).toList
   }
 
-  def dijkstra(measurements: List[Measurement], startingIntersection: Intersection, endingIntersection: Intersection) = ???
+  def dijkstra(
+                measurements: List[Measurement],
+                startingIntersection: Intersection,
+                endingIntersection: Intersection) = {
+    val graph =
+      measurements
+        .groupMap(_.roadSegment.startingIntersection)(m => m.roadSegment.endingIntersection -> m.transitTime)
+        .view
+        .mapValues(_.toMap)
+        .toMap
+
+    Dijkstra.pathWithCost[Intersection](graph)(startingIntersection)(endingIntersection)
+  }
 
   def echoForever: IO[Nothing] = {
     val program = for {
-      _ <- IO.println("Please input the data file location: ")
-      filename <- IO.readLine
       trafficMeasurements <- processFileInput
 
       startingIntersection <- processIntersectionInput("starting")
       endingIntersection <- processIntersectionInput("ending")
 
       avgMeasurements = calculateAvgMeasurements(trafficMeasurements)
-      //dijkstra(avgMeasurements)
+
+      result = dijkstra(avgMeasurements, startingIntersection, endingIntersection)
 
       _ <- IO.println(s"Your starting intersection is Avenue ${startingIntersection.avenue} and Street ${startingIntersection.street}")
       _ <- IO.println(s"Your ending intersection is Avenue ${endingIntersection.avenue} and Street ${endingIntersection.street}")
+      _ <- IO.println(s"Result: ${result}")
     } yield 1
     program.foreverM
   }
