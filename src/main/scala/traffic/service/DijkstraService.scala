@@ -33,27 +33,29 @@ object DijkstraService {
                                 costFromSource: Map[N, Cost],
                                 parents: Map[N, N]
                               ): (Map[N, Cost], Map[N, N]) = {
-        val currentNode = active.minBy(costFromSource)
-        if (active.isEmpty || currentNode === target) (costFromSource, parents)
-        else {
-          val currentCost = costFromSource(currentNode)
-          //Using Int.MaxValue seems big enough to work as an upper bound for the values and amount of nodes in the file
-          val neighbours =
-            graph(currentNode)
-              .filter { case (n, c) =>
-                currentCost + c < costFromSource.getOrElse(n, Int.MaxValue)
-              }
-              .view
-              .mapValues(_ + currentCost)
-              .toMap
-          val neighboursParents =
-            neighbours.view.mapValues(_ => currentNode).toMap
-          dijkstraRec(
-            active - currentNode ++ neighbours.keys,
-            costFromSource ++ neighbours,
-            parents ++ neighboursParents
-          )
-        }
+        val maybeCurrentNode = active.minByOption(costFromSource)
+        maybeCurrentNode.filterNot(_ === target) match {
+          //Either we are at the target node or the active set is empty
+          case None => (costFromSource, parents)
+          case Some(currentNode) =>
+            val currentCost = costFromSource(currentNode)
+            //Using Int.MaxValue seems big enough to work as an upper bound for the values and amount of nodes in the file
+            val neighbours =
+              graph(currentNode)
+                .filter { case (n, c) =>
+                  currentCost + c < costFromSource.getOrElse(n, Int.MaxValue)
+                }
+                .view
+                .mapValues(_ + currentCost)
+                .toMap
+            val neighboursParents =
+              neighbours.view.mapValues(_ => currentNode).toMap
+            dijkstraRec(
+              active - currentNode ++ neighbours.keys,
+              costFromSource ++ neighbours,
+              parents ++ neighboursParents
+            )
+          }
       }
 
       dijkstraRec(Set(source), Map(source -> 0), Map.empty)
