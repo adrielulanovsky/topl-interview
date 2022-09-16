@@ -9,7 +9,7 @@ import io.circe._
 import io.circe.parser._
 import io.circe.syntax.EncoderOps
 import traffic.model.Model._
-import traffic.service.DijkstraService.{Cost, Graph}
+import traffic.service.DijkstraService.{Cost, Edge, Graph}
 import traffic.service.{DijkstraService, FileService}
 
 import java.nio.file.{Files, Paths}
@@ -17,7 +17,9 @@ import java.nio.file.{Files, Paths}
 object Main extends IOApp {
   val IntersectionPattern = "([A-Z]+)(\\d+)".r
 
-  def validateIntersectionFormat(s: String): ValidatedNec[String, Intersection] =
+  def validateIntersectionFormat(
+      s: String
+  ): ValidatedNec[String, Intersection] =
     s match {
       case IntersectionPattern(avenue, street) =>
         Intersection(avenue, street).validNec
@@ -25,7 +27,10 @@ object Main extends IOApp {
         "Intersection format not valid. Should be {avenue name}{street name}. E.g.: A1, B4, G17".invalidNec
     }
 
-  def processIntersectionInput(startingOrEnding: String, intersections: Set[Intersection]): IO[Intersection] = {
+  def processIntersectionInput(
+      startingOrEnding: String,
+      intersections: Set[Intersection]
+  ): IO[Intersection] = {
     val receiveRawIntersection: IO[String] = for {
       _ <- IO.println(s"Please input the $startingOrEnding intersection: ")
       rawIntersection <- IO.readLine
@@ -36,7 +41,8 @@ object Main extends IOApp {
         validateIntersectionFormat(rawIntersection)
           .andThen(i =>
             if (intersections.contains(i)) i.validNec
-            else s"The provided intersection (${i.show}) doesn't exist in the dataset.".invalidNec
+            else
+              s"The provided intersection (${i.show}) doesn't exist in the dataset.".invalidNec
           )
 
       validatedIntersection match {
@@ -46,7 +52,10 @@ object Main extends IOApp {
           ).as(intersection)
         case Invalid(errors) =>
           errors
-            .traverse_(IO.println) >> processIntersectionInput(startingOrEnding, intersections)
+            .traverse_(IO.println) >> processIntersectionInput(
+            startingOrEnding,
+            intersections
+          )
       }
     }
   }
@@ -68,8 +77,12 @@ object Main extends IOApp {
       } yield path
     }
 
-  def processFile(path: String, fileService: FileService[IO]): IO[TrafficMeasurements] = {
-    fileService.readFile(path)
+  def processFile(
+      path: String,
+      fileService: FileService[IO]
+  ): IO[TrafficMeasurements] = {
+    fileService
+      .readFile(path)
       .flatMap { rawJson =>
         parse(rawJson) match {
           case Right(validJson) =>
@@ -88,7 +101,9 @@ object Main extends IOApp {
       }
   }
 
-  def processFileInput(fileService: FileService[IO]): IO[TrafficMeasurements] = {
+  def processFileInput(
+      fileService: FileService[IO]
+  ): IO[TrafficMeasurements] = {
     for {
       rawPath <- pathInput
       validPath <- validatePath(rawPath)
@@ -114,26 +129,37 @@ object Main extends IOApp {
     measurementsMap.map((Measurement.apply _).tupled).toList
   }
 
-  def buildGraph(
+  def buildEdges(
       measurements: List[Measurement]
-  ): Graph[Intersection] = {
+  ): Set[Edge[Intersection]] = {
     measurements
-      .groupMap(_.roadSegment.startingIntersection)(m =>
-        m.roadSegment.endingIntersection -> m.transitTime
-      )
-      .view
-      .mapValues(_.toMap)
-      .toMap
+      .map { m =>
+        (
+          m.roadSegment.startingIntersection,
+          m.roadSegment.endingIntersection,
+          m.transitTime
+        )
+      }
+      .toSet
   }
 
-  def formatResultMessage(start: Intersection, end: Intersection, maybeResult: Option[(List[Intersection], Cost)]): String = {
-    val json = maybeResult.map { case (path, cost) =>
-      val roadSegments: List[RoadSegment] = path.zip(path.drop(1)).map((RoadSegment.apply _).tupled)
+  def formatResultMessage(
+      start: Intersection,
+      end: Intersection,
+      maybeResult: Option[(List[Intersection], Cost)]
+  ): String = {
+    val json = maybeResult
+      .map { case (path, cost) =>
+        val roadSegments: List[RoadSegment] =
+          path.zip(path.drop(1)).map((RoadSegment.apply _).tupled)
 
-      Result(start, end, roadSegments, cost)
-    }.map(_.asJson)
+        Result(start, end, roadSegments, cost)
+      }
+      .map(_.asJson)
 
-    json.fold("\"" + s"It is impossible to reach intersection ${end.show} from ${start.show}" + "\"")(_.show)
+    json.fold(
+      "\"" + s"It is impossible to reach intersection ${end.show} from ${start.show}" + "\""
+    )(_.show)
   }
 
   def loop: IO[Unit] = {
@@ -145,10 +171,14 @@ object Main extends IOApp {
       //I chose to use the arithmetic mean, but parametrized the function to allow for different alternatives
       avgMeasurements = calculateAvgMeasurements(trafficMeasurements, mean)
 
-      graph = buildGraph(avgMeasurements)
-      intersections = graph.keys.toSet
+      edges = buildEdges(avgMeasurements)
+      graph = dijkstraService.buildGraph(edges)
+      intersections = dijkstraService.getNodes(graph)
 
-      startingIntersection <- processIntersectionInput("starting", intersections)
+      startingIntersection <- processIntersectionInput(
+        "starting",
+        intersections
+      )
       endingIntersection <- processIntersectionInput("ending", intersections)
 
       maybeResult = dijkstraService.pathWithCost(
@@ -157,7 +187,11 @@ object Main extends IOApp {
         endingIntersection
       )
 
-      resultMessage = formatResultMessage(startingIntersection, endingIntersection, maybeResult)
+      resultMessage = formatResultMessage(
+        startingIntersection,
+        endingIntersection,
+        maybeResult
+      )
 
       resultFilePath = "result.json"
       _ <- fileService.writeToFile(resultMessage, resultFilePath)

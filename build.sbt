@@ -22,7 +22,11 @@ lazy val root = (project in file(".")).settings(
     //circe for json
     "io.circe" %% "circe-core" % circeVersion,
     "io.circe" %% "circe-generic" % circeVersion,
-    "io.circe" %% "circe-parser" % circeVersion
+    "io.circe" %% "circe-parser" % circeVersion,
+    "org.scalacheck" %% "scalacheck" % "1.14.1" % Test,
+    "org.typelevel" %% "discipline-core" % "1.0.0" % Test,
+    "org.typelevel" %% "discipline-scalatest" % "2.1.1" % Test,
+    "org.scalatest" %% "scalatest" % "3.2.2" % Test
   )
 )
 
